@@ -1,0 +1,684 @@
+#######Script comparative genomics Cotesia
+
+
+#Assembly
+#Raw data analyses
+GENOSCOPE scripts
+
+##Cotesia congregata
+GENOSCOPE scripts
+
+##Cotesia congregata HiC assembly
+mapping with HiCbox using bowtie2 (version 2.2.5) options : --very-sensitive-local 
+instagraal <folder_cotesia> <reference_cotesia.fa> --device 0 --neighborhood 5 --cycles 1000 --level 4 --coverage-std 1 
+instagraal-polish -m polishing -f <reference_cotesia.fa> -i <info_frags.txt> -o <cotesia_polished.fa>
+
+##other Cotesia species
+velveth auto_data_91 91 -shortPaired -fastq -separate "$sp"_reads_R1_clean.fastq "$sp"_reads_R2_clean.fastq
+velvetg auto_data_91  -clean yes -exp_cov 19 -cov_cutoff $cutoff
+
+##estimate genome size
+jellyfish count -m 17 -s 10000000000 -t 20 -o "$sp"_k17 -C -c 4 "$sp"_genome.fasta
+jellyfish histo -t 20 "$i"_k17 -o "$sp"_k17_histo
+
+####Cotesia genomes Annotation
+
+##Cotesia congregata
+Awaiting GENOSCOPE scripts
+
+###Functional annotation
+
+#Blast2GO
+java -Xmx3000m -cp  /local/blast2go/*:/local/blast2go/ext/* es.blast2go.prog.B2GAnnotPipe -in ../BLASTNR/Cotesia_congregata.annot_v2.pep.fa.$1.nr.asn.xml -out Cotesia_congregata.annot_v2.pep.clean.fa.$1.b2g  -prop b2gPipe.properties -annot -ips Cotesia_congregata.annot_v2.pep.clean.fa.$1.xml > blast2go.$1.out
+converter.pl -format xml -input $1.tsv > $1.xml
+interproscan.sh -i $1 -o $1.xml -iprlookup -goterms --pathways -f xml -dp
+signalp $1 > $1.signalp
+cat $1 | /local/tmhmm/2.0c/bin/decodeanhmm.Linux_x86_64 -f /local/tmhmm/2.0c/lib/TMHMM2.0.options -modelfile /local/tmhmm/2.0c/lib/TMHMM2.0.model > $1.tmhmm
+
+
+##other Cotesia species
+###Automated annotation
+for i in `ls *_genome.fasta
+	do
+	#creation
+	j=`echo "$i" |sed -e 's/\.fasta//g'`
+	mkdir ./"$j"_transfert_folder
+	#RUN1
+	mkdir ./"$j"_transfert_folder/Maker_RUN1
+	sed -e 's/genome=G/genome='"$i"'/g' ../../SCRIPTS.dir/maker_opts.ctl > ./maker_opts.ctl
+	#execution
+	mpiexec -n $nb_process maker maker_opts.ctl maker_bopts.ctl maker_exe.ctl
+	#extract gff
+	mv ./"$j".maker.output/"$j"_master_datastore_index.log ./"$j".maker.output/"$j"_master_datastore_index.log.bak
+	maker -dsindex maker_opts.ctl maker_bopts.ctl maker_exe.ctl
+	gff3_merge -d ./"$j".maker.output/"$j"_master_datastore_index.log -o maker_round1.gff3
+	#Snap
+	maker2zff maker_round1.gff3
+	/local/maker/2.31.3/exe/snap/fathom -categorize 1000 genome.ann genome.dna
+	/local/maker/2.31.3/exe/snap/fathom -export 1000 -plus uni.ann uni.dna
+	/local/maker/2.31.3/exe/snap/forge export.ann export.dna
+	/local/maker/2.31.3/exe/snap/hmm-assembler.pl "$j"_1 . > "$j"_1.hmm
+	#Augustus
+	maker2zff maker_round1.gff3
+	/local/maker/2.31.3/exe/snap/zff2gff3.pl genome.ann | perl -plne 's/\t(\S+)$/\t\.\t$1/' > genome.gff3
+	perl /local/augustus-3.0/scripts/autoAug.pl --genome="$j".fasta --species="$j"_1 --trainingset=genome.gff3 --noninteractive --cname=genocluster2 -v --useexisting
+	#RUN2
+	mkdir ./Maker_RUN2
+	sed -e 's/genome=G/genome='"$i"'/g' -e 's/snaphmm=/snaphmm='"$j"'_1\.hmm/g' -e 's/augustus_species=/augustus_species='"$j"'_1/g' -e 's/est2genome=1/est2genome=0/g' -e 's/protein2genome=1/protein2genome=0/g' ../../SCRIPTS.dir/maker_opts.ctl > ./maker_opts.ctl
+	#execution
+	mpiexec -n $nb_process maker maker_opts.ctl maker_bopts.ctl maker_exe.ctl
+	#extract gff
+	mv ./"$j".maker.output/"$j"_master_datastore_index.log ./"$j".maker.output/"$j"_master_datastore_index.log.bak
+	maker -dsindex maker_opts.ctl maker_bopts.ctl maker_exe.ctl
+	gff3_merge -d ./"$j".maker.output/"$j"_master_datastore_index.log -o maker_round2.gff3
+	#Snap
+	maker2zff maker_round2.gff3
+	/local/maker/2.31.3/exe/snap/fathom -categorize 1000 genome.ann genome.dna
+	/local/maker/2.31.3/exe/snap/fathom -export 1000 -plus uni.ann uni.dna
+	/local/maker/2.31.3/exe/snap/forge export.ann export.dna
+	/local/maker/2.31.3/exe/snap/hmm-assembler.pl "$j"_2 . > "$j"_2.hmm
+	#Augustus
+	maker2zff maker_round2.gff3
+	/local/maker/2.31.3/exe/snap/zff2gff3.pl genome.ann | perl -plne 's/\t(\S+)$/\t\.\t$1/' > genome.gff3
+	perl /local/augustus-3.0/scripts/autoAug.pl --genome="$j".fasta --species="$j"_2 --trainingset=genome.gff3 --noninteractive --cname=genocluster2 -v --useexisting
+	#RUN3
+	mkdir ./Maker_RUN3
+	sed -e 's/genome=G/genome='"$i"'/g' -e 's/snaphmm=/snaphmm='"$j"'_2\.hmm/g' -e 's/augustus_species=/augustus_species='"$j"'_2/g' -e 's/est2genome=1/est2genome=0/g' -e 's/protein2genome=1/protein2genome=0/g' ../../SCRIPTS.dir/maker_opts.ctl > ./maker_opts.ctl
+	#execution
+	mpiexec -n $nb_process maker maker_opts.ctl maker_bopts.ctl maker_exe.ctl
+	#extract gff
+	mv ./"$j".maker.output/"$j"_master_datastore_index.log ./"$j".maker.output/"$j"_master_datastore_index.log.bak
+	maker -dsindex maker_opts.ctl maker_bopts.ctl maker_exe.ctl
+	gff3_merge -d ./"$j".maker.output/"$j"_master_datastore_index.log -o maker_round3.gff3
+	#finale transformation
+	awk '{if ($2 == "maker") {print}}' maker_round3.gff3 > "$j"_OGS1.0.gff3
+	maker_map_ids --prefix "$j" --justify 6 "$j"_OGS1.0.gff3 > maker.id.map
+	map_gff_ids maker.id.map "$j"_OGS1.0.gff3
+	gtf=`basename "$j"_OGS1.0.gff3 .gff3`.gtf
+	maker2eval_gtf "$j"_OGS1.0.gff3 > $gtf
+	/local/eval/2.2.8/validate_gtf.pl $gtf > $gtf.validation
+	/local/eval/2.2.8/get_general_stats.pl $gtf > $gtf.stats
+	. /local/env/envcufflinks-2.2.1.sh
+	name=`basename "$j"_OGS1.0.gff3 .gff3`
+	gffread "$j"_OGS1.0.gff3 -g "$j".fasta -w "$j"_OGS1.0_transcripts.fa -y "$j"_OGS1.0_proteins.fa -x "$j"_OGS1.0_cds.fa
+	done
+
+#BUSCO
+BUSCO.py -c 20 -o "$i"_busco -i $i -l insecta_odb9 -m geno
+BUSCO.py -c 10 -o "$j"_busco -i "$i" -l insecta_odb9 -m prot
+
+#Phylogenomics
+fastaConcat.py $list_busco_gene > all_"$i"_buscogenes.fasta
+mafft all_10sp_cds_busco.fa > all_10sp_cds_busco_align.fa
+
+
+#OrthoFinder
+orthofinder -f PROT.dir -t 20
+
+#Reciprocal best blast hit
+blastp -query Cc_prot.fasta -db Md_prot.fasta -evalue 1e-10  -max_target_seqs 1 -outfmt 6 -out blastp_md_on_cc_1HITS.tab -num_threads 8
+blastp -query Md_prot.fasta -db Cc_prot.fasta -evalue 1e-10  -max_target_seqs 1 -outfmt 6 -out blastp_cc_on_md_1HITS.tab -num_threads 8
+join -1 1 -2 2 blastp_md_on_cc_1HITS.tab blastp_cc_on_md_1HITS.tab > joined_blastp_results
+awk '{ if ($2 == $3) print $0}' joined_blastp_results > joined_blastp_uniq
+
+#Synteny
+while read a
+	do
+	echo $a
+	for i in yes no
+		do
+		R --slave --vanilla --quiet --no-save --args <<EEE
+		pdf("graph_.$a._rev_$i.pdf",width=40,height=8)
+		#import data
+		focus_gene="$a"
+		size_synteny=150000
+		rev="$i"
+		corresp=read.table("joined_blastp_uniq",h=F)
+		sp1_annot=read.table("Cc_annot",h=F)
+		sp2_annot=read.table("Md_annot",h=F)
+		#extract homolog focus gene in sp2
+		focus_gene_sp2=as.vector(corresp[corresp[,1]==focus_gene,][,2])
+		#extract scaff sp1 with focus gene
+		scaff_sp1_focus=as.vector(sp1_annot[sp1_annot[,5]==focus_gene,][,2])
+		#extract scaff sp2 with focus gene
+		scaff_sp2_focus=as.vector(sp2_annot[sp2_annot[,5]==focus_gene_sp2,][,2])
+		#extract scaffold size sp1
+		scaff_sp1_line=sp1_annot[(sp1_annot[,2]==scaff_sp1_focus) & (sp1_annot[,5]=="source"),]
+		#extract scaffold size sp2
+		scaff_sp2_line=sp2_annot[(sp2_annot[,2]==scaff_sp2_focus) & (sp2_annot[,5]=="source"),]
+		#centers
+		sp1_center<-as.vector(sp1_annot[sp1_annot[,5]==focus_gene,][,3])
+		sp2_center<-as.vector(sp2_annot[sp2_annot[,5]==focus_gene_sp2,][,3])
+		#starts
+		if (sp1_center-size_synteny < 0){
+			sp1_scaff_start=-sp1_center
+			sp1_scaff_start_real=0
+		} else {
+			sp1_scaff_start=-size_synteny
+			sp1_scaff_start_real=sp1_center-size_synteny
+		}
+		if (sp2_center-size_synteny < 0){
+			sp2_scaff_start=-sp2_center
+			sp2_scaff_start_real=0
+		} else {
+			sp2_scaff_start=-size_synteny
+			sp2_scaff_start_real=sp2_center-size_synteny
+		}
+		#ends
+		#if the start of gene + focus window above scaffold size 
+		if (sp1_center+size_synteny > as.vector(scaff_sp1_line[,4])){
+			sp1_scaff_end=as.vector(scaff_sp1_line[,4])-sp1_center
+			sp1_scaff_end_real=as.vector(scaff_sp1_line[,4])
+		} else {
+			sp1_scaff_end=size_synteny
+			sp1_scaff_end_real=sp1_center+size_synteny
+		}
+		if (sp2_center+size_synteny > as.vector(scaff_sp2_line[,4])){
+			sp2_scaff_end=as.vector(scaff_sp2_line[,4])-sp2_center
+			sp2_scaff_end_real=as.vector(scaff_sp2_line[,4])
+		} else {
+			sp2_scaff_end=size_synteny
+			sp2_scaff_end_real=sp2_center+size_synteny
+		}
+		plot(1,1,type="p",pch=20,col="white",xlim=c(-(size_synteny+10000),(size_synteny+10000)),ylim=c(-1,2),bty="n",ylab="",xlab="",yaxt="n",xaxt="n")
+		#plot(1,1,type="p",pch=20,col="white",xlim=c(-(size_synteny+10000),(size_synteny+10000)),ylim=c(-1,2))
+		#sp1 reference scaffold plot
+		##basic line
+		###plot
+		rect(sp1_scaff_start,c(1.08),sp1_scaff_end,c(1.13),col="black")
+		rect(sp2_scaff_start,c(0.08),sp2_scaff_end,c(0.13),col="black")
+		##genes sp1
+		###extract genes
+		sp1_gene_scaff_of_interest=sp1_annot[(sp1_annot[,2]==scaff_sp1_focus) & (sp1_annot[,1]=="gene") & (sp1_annot[,3]>=sp1_center-size_synteny) & (sp1_annot[,4]<=sp1_center+size_synteny) ,]
+		###plot genes
+		rect(sp1_gene_scaff_of_interest[,3]-sp1_center,c(1.06),sp1_gene_scaff_of_interest[,4]-sp1_center,c(1.15),col="white",border ="black")
+		##genes sp2
+		###extract genes
+		sp2_gene_scaff_of_interest=sp2_annot[(sp2_annot[,2]==scaff_sp2_focus) & (sp2_annot[,1]=="gene") & (sp2_annot[,3]>=sp2_center-size_synteny) & (sp2_annot[,4]<=sp2_center+size_synteny) ,]
+		###plot genes
+		if (rev == "yes"){
+			rect(1-(sp2_gene_scaff_of_interest[,3]-sp2_center),c(0.06),1-(sp2_gene_scaff_of_interest[,4]-sp2_center),c(0.15),col="white",border ="black")
+		} else {
+			rect(sp2_gene_scaff_of_interest[,3]-sp2_center,c(0.06),sp2_gene_scaff_of_interest[,4]-sp2_center,c(0.15),col="white",border ="black")
+		}
+		rect(sp1_gene_scaff_of_interest[(sp1_gene_scaff_of_interest[,5]==focus_gene),][,3]-sp1_center,c(1.06),sp1_gene_scaff_of_interest[(sp1_gene_scaff_of_interest[,5]==focus_gene),][,4]-sp1_center,c(1.15),col="red",border ="black")
+		if (rev == "yes"){
+			rect(1-(sp2_gene_scaff_of_interest[(sp2_gene_scaff_of_interest[,5]==focus_gene_sp2),][,3]-sp2_center),c(0.06),1-(sp2_gene_scaff_of_interest[(sp2_gene_scaff_of_interest[,5]==focus_gene_sp2),][,4]-sp2_center),c(0.15),col="red",border ="black")
+		} else {
+			rect(sp2_gene_scaff_of_interest[(sp2_gene_scaff_of_interest[,5]==focus_gene_sp2),][,3]-sp2_center,c(0.06),sp2_gene_scaff_of_interest[(sp2_gene_scaff_of_interest[,5]==focus_gene_sp2),][,4]-sp2_center,c(0.15),col="red",border ="black")
+		}
+		#plot links
+		corresp_with_coord<-merge(merge(corresp,sp1_gene_scaff_of_interest,by.x=1,by.y=5),sp2_gene_scaff_of_interest,by.x=2,by.y=5) 
+		if (rev == "yes"){
+			for(j in 1:200){
+				tmp<-data.frame(corresp_with_coord[j,])
+				polygon(c(tmp[,6]-sp1_center,tmp[,5]-sp1_center,1-(tmp[,10]-sp2_center),1-(tmp[,9]-sp2_center)),c(1.04,1.04,0.17,0.17),col=rgb(0.8, 0.8, 0.8,0.8),border = NA)
+			}
+		} else {
+			for(j in 1:200){
+				tmp<-data.frame(corresp_with_coord[j,])
+				polygon(c(tmp[,5]-sp1_center,tmp[,6]-sp1_center,tmp[,10]-sp2_center,tmp[,9]-sp2_center),c(1.04,1.04,0.17,0.17),col=rgb(0.8, 0.8, 0.8,0.8),border = NA)
+			}
+		}
+		#positions on figure
+		text(sp1_scaff_start,c(1.25),labels=scaff_sp1_focus,cex=1.8)
+		text(sp1_scaff_start,c(1.00),labels=sp1_scaff_start_real,cex=1.8)
+		text(sp1_scaff_end,c(1.00),labels=sp1_scaff_end_real,cex=1.8)
+		text(sp2_scaff_start,c(0.25),labels=scaff_sp2_focus,cex=1.8)
+		if (rev == "yes"){
+			text(sp2_scaff_end,c(0.00),labels=sp2_scaff_start_real,cex=1.8)
+			text(sp2_scaff_start,c(0.00),labels=sp2_scaff_end_real,cex=1.8)
+		} else {
+			text(sp2_scaff_start,c(0.00),labels=sp2_scaff_start_real,cex=1.8)
+			text(sp2_scaff_end,c(0.00),labels=sp2_scaff_end_real,cex=1.8)			
+		}
+		#gene name on figure
+		text(sp1_gene_scaff_of_interest[,3]-sp1_center,c(1.5),labels=sp1_gene_scaff_of_interest[,5],cex=0.4,srt = 90)
+		if (rev == "yes"){
+			text(1-(sp2_gene_scaff_of_interest[,3]-sp2_center),c(-0.4),labels=sp2_gene_scaff_of_interest[,5],cex=0.4,srt = 90)
+		} else {
+			text(sp2_gene_scaff_of_interest[,3]-sp2_center,c(-0.4),labels=sp2_gene_scaff_of_interest[,5],cex=0.4,srt = 90)
+		}
+		#RQ ajouter sens
+		axis(1,pos = -0.7, at=seq(-(size_synteny+10000),size_synteny+10000,size_synteny/5),labels=seq(0,(size_synteny+10000)*2,size_synteny/5))
+		dev.off()
+EEE
+		done
+	done < list_gene
+
+#Multigenic family
+notung graphical interface using default parameters
+
+#Evolution (dN/dS)
+##alignement keeping codons
+java -jar macse_v2.03.jar -prog alignSequences -seq cc_md_$gene.fasta -out_NT output_NT.fasta -out_AA output_AA.fasta
+
+#dNdS using PAML
+for i in `ls *.fasta`
+	do	
+	java -jar ~/scripts/macse_v2.03.jar -prog alignSequences -seq "$i"
+	done
+###Running Codeml
+for i in `ls *.fasta`
+	do
+	j=`echo "$i" |sed -e 's/\.fasta//g'`	
+	sed -e 's/gena/'"$j"'/g' codeml_gene.ctl > codeml_"$j"_gene.ctl
+	codeml codeml_"$j"_gene.ctl
+	sed -e 's/gena/'"$j"'/g' codeml_gene_neutral.ctl > codeml_"$j"_neutral.ctl
+  	codeml codeml_"$j"_neutral.ctl
+	lnl1=`grep "lnL" "$j"_dnds | awk '{print $5}'`
+	lnl0=`grep "lnL" "$j"_neutral_dnds | awk '{print $5}'`
+	R --slave --vanilla --quiet --no-save --args <<EEE
+	LRT<-2*($lnl1-$lnl0)
+	write(LRT, file = "val_$j")
+EEE
+
+###codeml_gene.ctl
+seqfile = gena.fasta
+treefile = Cotesia_tree.newick
+outfile = gena_whole_dnds
+
+noisy = 0
+verbose = 1
+runmode = 0
+
+seqtype = 1
+CodonFreq = 2 
+ndata = 1
+clock = 0
+
+aaDist = 0
+
+model = 0
+NSsites = 0
+icode = 0
+Mgene = 0
+
+fix_kappa = 0
+kappa = 2
+
+fix_omega = 0
+omega = 1
+
+getSE = 0
+RateAncestor = 0
+Small_Diff = .5e-6
+cleandata = 0
+fix_blength = 1
+method = 0
+
+##codeml_gene_neutral.ctl
+seqfile = gena.fasta
+treefile = Cotesia_tree.newick
+outfile = gena_whole_neutral_dnds
+
+noisy = 0
+verbose = 1
+runmode = 0
+
+seqtype = 1
+CodonFreq = 2 
+ndata = 1
+clock = 0
+
+aaDist = 0
+
+model = 0
+NSsites = 0
+icode = 0
+Mgene = 0
+
+fix_kappa = 0
+kappa = 2
+
+fix_omega = 1
+omega = 1
+
+getSE = 0
+RateAncestor = 0
+Small_Diff = .5e-6
+cleandata = 0
+fix_blength = 1
+method = 0
+
+
+####Running yn00 from PAML 
+for i in `ls *.fasta`
+do 
+mkdir "$i"_DIR
+cd "$i"_DIR
+cp ../"$i" .
+mv "$i" seq_aln
+mkdir paml_results
+cd paml_results
+cp ../../ynoo.ctl .
+yn00 ynoo.ctl
+cd ../../
+done
+
+####yn00 control file
+      seqfile = ../seq_aln * sequence data file name
+      outfile = yn           * main result file
+      verbose = 0  * 1: detailed output (list sequences), 0: concise output
+        icode = 0  * 0:universal code; 1:mammalian mt; 2-10:see below
+
+    weighting = 0  * weighting pathways between codons (0/1)?
+   commonf3x4 = 0  * use one set of codon freqs for all pairs (0/1)? 
+*       ndata = 1
+
+* Genetic codes: 0:universal, 1:mammalian mt., 2:yeast mt., 3:mold mt.,
+* 4: invertebrate mt., 5: ciliate nuclear, 6: echinoderm mt., 
+* 7: euplotid mt., 8: alternative yeast nu. 9: ascidian mt., 
+* 10: blepharisma nu.
+* These codes correspond to transl_table 1 to 11 of GENEBANK.
+
+#####Extract dN/dS
+for i in `ls *.fasta`
+do 
+cd "$i"_DIR
+awk 'FNR == 91' paml_results/yn > dnds
+cd ../
+done
+grep "+" *.fasta_DIR/dnds > odve66_dnds_all
+
+####Statistics and boxplot in R
+######with cc cs
+data<-read.table(file = "cc_cs_dnds.txt", dec =".")
+data$group<-c(rep("busco",422),rep("nudi",57), rep("odve",19), rep("vir",106))
+data$group<-as.factor(data$group)
+data<-subset(data, group !="bv")
+data<droplevels(data)
+data$group<-droplevels(data$group)
+###Stats
+kruskal.test(data$V8~data$group)
+libray(PMCMRplus)
+posthoc.kruskal.nemenyi.test(data$V8~data$group)
+###Figure
+a<-subset(data,data$group =="busco")
+b<-subset(data,data$group =="nudi")
+c<-subset(data,data$group =="odve")
+d<-subset(data,data$group =="vir")
+par(mar=c(3,4,1,1))     # Larger bottom and left margins
+boxplot(data$V8~data$group, notch= T, pch=20,cex=0.8,
+        names=c("BUSCO","Nudiviral","odv-e66","Virulence"), cex.axis=0.75, 
+        col=c("grey","red3","salmon3","blue"), 
+        ylab = "", xlab="", ylim=c(0,2))
+title(ylab="dN/dS", line=1.9, cex.lab=1.2,font.lab=3)
+text(1, max(a$V8)+0.09, "a", font=2)
+text(2, max(b$V8)+0.09, "b", font=2)
+text(3, max(c$V8)+0.09, "c", font=2)
+text(4, max(d$V8)+0.09, "c", font=2)
+text(1, 2, "n=422",cex=0.9)
+text(2, 2, "n=57",cex=0.9)
+text(3, 2, "n=19",cex=0.9)
+text(4, 2, "n=106",cex=0.9)
+
+
+
+
+####### Script RNAseq Cotesia congregata
+
+###Mapping with TopHat2
+tophat2 -g 1 -p 8 --no-mixed -o $3 ../../BOWTIE2/cotesia_congregata $1 $2
+
+#Hélène Boulain December 2019
+
+
+###RNAseq count with Subread FeatureCount
+#! /bin/bash
+featureCounts \
+/groups/dogogepp/gogepp_is/cotesia/src_data/Mapping_RNASeq/cotesia_congregata/bam/${1}.bam \
+-a OGS2.4_20190127.gff \
+-o ${1}_counts.txt \
+-g Name \
+-t exon \
+-C \
+-p \
+-s 0 \
+-M \
+--fraction
+
+
+################RNAseq Differential expression analyses
+
+###In R
+#packages needed
+library(limma)
+library(statmod)
+library(edgeR)
+library(RColorBrewer)
+library(dplyr)
+library(corrplot)
+library(pheatmap)
+library(FactoMineR)
+library(DESeq2)
+library(ggfortify)
+library(ggplot2)
+library(gplots)
+library(cluster)
+library(lattice)
+library("PerformanceAnalytics")
+
+
+
+######working directory
+setwd(dir ="/Users/heleneboulain/Desktop/COTESIA_rnaseq/")
+
+######Donwload data samples (count generated by subread featurecount)
+files<-list.files(pattern="_counts.txt") #pattern of files
+x<-readDGE(files, columns=c(1,7), sep="\t", header=F) # DGE for edgeR : "gene name" et "raw count"
+dim(x) # nb gene in sample 
+x$samples # nb samples and check DGE
+
+############Info about samples
+col <-c(rep("lightsalmon1",2),rep("indianred1",2),rep("indianred2",2),
+          rep("indianred3",2),rep("indianred4",2),rep("blue",2))
+x$samples$col<-col
+
+samplesnames<-c("Ov2_1","Ov2_2","Ov3_1","Ov3_2","Ov4_1","Ov4_2","Ov5_1","Ov5_2","Ove_1","Ove_2","vg1","vg2")
+x$samples$samplename<-samplesnames
+
+group<-c("Ov2","Ov2","Ov3","Ov3","Ov4","Ov4","Ov5","Ov5","Ove","Ove","vg","vg")
+x$samples$group <- group
+
+z<-c("Geneid",	"Chr",	"Start",	"End",	"Strand",	"Length", "bam")
+annot<-read.table("A1_counts.txt",header=F, col.names = z) # chargement d'un des dataset de featureCount
+annot<-annot[,1:6] # Keep annotation
+x$ann<-annot 
+head(x$ann)
+x_backup<-x
+x
+
+Genes<-rownames(x)
+Genes
+x$genes
+
+
+ovvg<-x
+dim(ovvg)
+ovvg$samples
+ovvg_cpm<-cpm(ovvg)
+table(rowSums(ovvg_cpm==0)==12) ###### transcript without read
+ovvg_lcpm<-cpm(ovvg,log=TRUE)
+nsamples<-ncol(x)
+
+#################### Density/filtering
+pdf(file = "Density_filtering.pdf")
+par(mfrow=c(1,2))
+plot(density(ovvg_lcpm[,1]), col=ovvg$samples$col, lwd=2, ylim=c(0,0.21), las=2, main="", xlab="")
+title(main="A. Raw data", xlab="Log-cpm") 
+abline(v=0, lty=3)
+for (i in 2:nsamples){
+  den<-density(ovvg_lcpm[,i])
+  lines(den$x, den$y, col=ovvg$samples$col[i],lwd=2)
+}
+legend("topright", ovvg$samples$samplename, text.col=ovvg$samples$col, bty="n", text.width=4,cex=0.4)
+
+keep.exprs <- rowSums(ovvg_cpm>0.4)>=2 #######filtering
+table(keep.exprs)
+dim(ovvg)
+filt_ovvg <- ovvg[keep.exprs,,keep.lib.sizes=FALSE]# only expressed ones after filtering
+ovvg
+filt_ovvg
+dim(filt_ovvg)
+fovvg_lcpm<-cpm(filt_ovvg, log=TRUE)
+cpm(15, mean(filt_ovvg$samples$lib.size))
+
+plot(density(fovvg_lcpm[,1]), col=col[1], lwd=2, ylim=c(0,0.21), las=2, main="", xlab="")
+title(main="B. Filtered data", xlab="Log-cpm")
+abline(v=0, lty=3) 
+for (i in 2:nsamples){
+  den <- density(fovvg_lcpm[,i])
+  lines(den$x, den$y, col=ovvg$samples$col[i], lwd=2)
+} 
+legend("topright",ovvg$samples$samplename, text.col=ovvg$samples$col, bty="n", text.width=4,cex=0.4)
+dev.off()
+
+
+################### Normalization by TMM method
+
+fovvg_cpm <- cpm(filt_ovvg, log=F)
+fovvg_lcpm <- cpm(filt_ovvg, log=TRUE)#log cpm of filtered 
+colnames(ovvg_lcpm)<-ovvg$samples$samplename
+
+novvg<-calcNormFactors(filt_ovvg, method = "TMM")
+filt_ovvg$samples
+novvg$samples
+nfovvg_cpm <- cpm(novvg)
+nfovvg_lcpm <- cpm(novvg, log=TRUE)
+colnames(nfovvg_lcpm)<-ovvg$samples$samplename
+colnames(fovvg_lcpm)<-ovvg$samples$samplename
+
+###plot
+pdf(file = "Normalization.pdf")
+par(mfrow=c(2,1))
+boxplot(fovvg_lcpm,  col=ovvg$samples$col, main="", cex.axis=0.5,las=2)
+title(main="Non Normalized data",ylab="Log-cpm")
+boxplot(nfovvg_lcpm,  col=ovvg$samples$col, main="", cex.axis=0.5,las=2)
+title(main="Normalized data",ylab="Log-cpm")
+dev.off()
+
+
+########### Heatmaps for correlation and distance among samples
+
+cormat<-cor(nfovvg_lcpm, method="spearman")
+col <- colorRampPalette( rev(brewer.pal(9, "Blues")) )(255)
+heatmap.2(cormat, col=col,margins=c(5,4), trace="none", RowSideColors = ovvg$samples$col, ColSideColors = ovvg$samples$col,density.info = "none")
+
+######Save normalized cpm of filtered genes /raw replicates
+write.table(nfovvg_cpm, file="filtered_norm_cpm.txt", quote = F)
+
+######Average cpm
+Ov2_1_cpm<-nfovvg_cpm[,1]
+Ov2_2_cpm<-nfovvg_cpm[,2]
+Ov2_cpm<-rowMeans(nfovvg_cpm[,1:2])
+Ov3_cpm<-rowMeans(nfovvg_cpm[,3:4])
+Ov4_cpm<-rowMeans(nfovvg_cpm[,5:6])
+Ov5_cpm<-rowMeans(nfovvg_cpm[,7:8])
+Ove_cpm<-rowMeans(nfovvg_cpm[,9:10])
+vg_cpm<-rowMeans(nfovvg_cpm[,11:12])
+
+
+#####DE analysis with contrast_design using edgeR
+
+instar<-factor(novvg$samples$group)
+instar
+
+design <- model.matrix(~0+instar)
+design
+colnames(design) <- levels(instar)
+novvgBP <- estimateDisp(novvg, design , robust=TRUE)
+novvgBP$common.dispersion
+novvgBPfit <- glmQLFit(novvgBP, design, robust=TRUE)
+colnames(novvgBPfit)
+
+##contrast matrix: comparisons between successive instars
+my.contrasts <- makeContrasts(
+  Ov3_Ov2 = Ov3 - Ov2,
+  Ov4_Ov3 = Ov4 - Ov3,
+  Ov5_Ov4 = Ov5 - Ov4,
+  Ove_Ov5 = Ove - Ov5,
+  vg_Ove = vg - Ove,
+  levels=design)
+
+#Statistical tests
+###Ov3_Ov2
+contrast1<-glmQLFTest(novvgBPfit, contrast=my.contrasts[,"Ov3_Ov2"])
+contrast1$table$FDR <- p.adjust(contrast1$table$PValue, method="BH")
+Ov3_Ov2_FDR<-contrast1$table$FDR
+Ov3_Ov2_logFC<-contrast1$table$logFC
+
+###Ov4_Ov3
+contrast5<-glmQLFTest(novvgBPfit, contrast=my.contrasts[,"Ov4_Ov3"])
+contrast5$table$FDR <- p.adjust(contrast5$table$PValue, method="BH")
+Ov4_Ov3_FDR<-contrast5$table$FDR
+Ov4_Ov3_logFC<-contrast5$table$logFC
+
+###Ov5_Ov4
+contrast8<-glmQLFTest(novvgBPfit, contrast=my.contrasts[,"Ov5_Ov4"])
+contrast8$table$FDR <- p.adjust(contrast8$table$PValue, method="BH")
+Ov5_Ov4_FDR<-contrast8$table$FDR
+Ov5_Ov4_logFC<-contrast8$table$logFC
+
+###Ove_Ov5
+contrast10<-glmQLFTest(novvgBPfit, contrast=my.contrasts[,"Ove_Ov5"])
+contrast10$table$FDR <- p.adjust(contrast10$table$PValue, method="BH")
+Ove_Ov5_FDR<-contrast10$table$FDR
+Ove_Ov5_logFC<-contrast10$table$logFC
+
+###vg_Ove
+contrast15<-glmQLFTest(novvgBPfit, contrast=my.contrasts[,"vg_Ove"])
+contrast15$table$FDR <- p.adjust(contrast15$table$PValue, method="BH")
+vg_Ove_FDR<-contrast15$table$FDR
+vg_Ove_logFC<-contrast15$table$logFC
+
+
+exp_stat<-as.data.frame(cbind(Ov2_1_cpm,
+                              Ov2_2_cpm,
+                              Ov2_cpm,
+                               Ov3_cpm,
+                               Ov4_cpm,
+                               Ov5_cpm,
+                               Ove_cpm,
+                               vg_cpm,
+                              Ov3_Ov2_logFC,
+                              Ov3_Ov2_FDR,
+                              Ov4_Ov3_logFC,
+                              Ov4_Ov3_FDR,
+                              Ov5_Ov4_logFC,
+                              Ov5_Ov4_FDR,
+                              Ove_Ov5_logFC,
+                              Ove_Ov5_FDR,
+                              vg_Ove_logFC,
+                              vg_Ove_FDR
+                              ))
+
+######complete data table with non expressed genes
+allrow<-rownames(ovvg_cpm)
+exp_row<-rownames(exp_stat)
+unexp_id<-setdiff(allrow,exp_row)
+
+unexp<-matrix(ncol=ncol(exp_stat),nrow=2934)
+rownames(unexp)<-unexp_id
+colnames(unexp)<-colnames(exp_stat)
+
+complete_gene_set<-as.data.frame(rbind(exp_stat, unexp))
+complete_gene_set<-as.data.frame(cbind(complete_gene_set,rownames(complete_gene_set)))
+
+###export data
+write.table(complete_gene_set, file="expression_DE_allcomparison_stat.txt", quote = F)
+data <- read.table(file="expression_DE_allcomparison_stat.txt",header=T,sep=" ",dec=".")
+attach(data)
+colnames(data)
+dim(na.omit(data))
+
+#####call annotation file
+annot<-read.table(file="annot_file_complete.txt")
+
+######merge annotation and rnaseq results
+data<-merge(data, annot, by.x="rownames.complete_gene_set.", by.y="V1")
+
+#export
+write.table(data, file="expression_DE_stat_annot.txt", quote = F)
+
+
